@@ -721,8 +721,9 @@ func (v9Entries) GetChunkWriteEntries(bucket Bucket, metricName string, labels l
 func (v9Entries) GetReadMetricQueries(bucket Bucket, metricName string) ([]IndexQuery, error) {
 	return []IndexQuery{
 		{
-			TableName: bucket.tableName,
-			HashValue: bucket.hashKey + ":" + metricName,
+			TableName:  bucket.tableName,
+			HashValue:  bucket.hashKey + ":" + metricName,
+			ValueEqual: empty,
 		},
 	}, nil
 }
@@ -827,8 +828,9 @@ func (s v10Entries) GetReadMetricQueries(bucket Bucket, metricName string) ([]In
 	result := make([]IndexQuery, 0, s.rowShards)
 	for i := uint32(0); i < s.rowShards; i++ {
 		result = append(result, IndexQuery{
-			TableName: bucket.tableName,
-			HashValue: fmt.Sprintf("%02d:%s:%s", i, bucket.hashKey, metricName),
+			TableName:  bucket.tableName,
+			HashValue:  fmt.Sprintf("%02d:%s:%s", i, bucket.hashKey, metricName),
+			ValueEqual: empty,
 		})
 	}
 	return result, nil
