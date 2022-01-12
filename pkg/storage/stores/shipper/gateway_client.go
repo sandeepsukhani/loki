@@ -22,7 +22,7 @@ import (
 	util_math "github.com/grafana/loki/pkg/util/math"
 )
 
-const maxQueriesPerGoroutine = 100
+const maxQueriesPerGoroutine = 1000
 
 type IndexGatewayClientConfig struct {
 	Address          string            `yaml:"server_address,omitempty"`
@@ -132,6 +132,7 @@ func (s *GatewayClient) doQueries(ctx context.Context, queries []chunk.IndexQuer
 			level.Error(util_log.Logger).Log("msg", fmt.Sprintf("unexpected %s QueryKey received, expected queries %s", resp.QueryKey, fmt.Sprint(queryKeyQueryMap)))
 			return fmt.Errorf("unexpected %s QueryKey received", resp.QueryKey)
 		}
+		level.Debug(util_log.Logger).Log("msg", fmt.Sprintf("received %d entries from index-gateway", len(resp.Rows)))
 		if !callback(query, &readBatch{resp}) {
 			return nil
 		}

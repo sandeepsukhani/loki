@@ -34,6 +34,7 @@ const (
 	DBOperationWrite
 
 	openBoltDBFileTimeout = 5 * time.Second
+	responseBatchSize     = 10000
 )
 
 // BoltDBConfig for a BoltDB index client.
@@ -268,7 +269,14 @@ func (b *BoltIndexClient) QueryWithCursor(_ context.Context, c *bbolt.Cursor, qu
 
 	rowPrefix := []byte(query.HashValue + separator)
 
-	var batch boltReadBatch
+	wg := sync.WaitGroup{}
+	batch := newReadBatch()
+	defer func() {
+		batch.done()
+		wg.Wait()
+	}()
+
+	callbackDone := false
 
 	for k, v := c.Seek(start); k != nil; k, v = c.Next() {
 		if !bytes.HasPrefix(k, rowPrefix) {
@@ -282,16 +290,30 @@ func (b *BoltIndexClient) QueryWithCursor(_ context.Context, c *bbolt.Cursor, qu
 			continue
 		}
 
+		if !callbackDone {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				callback(query, batch)
+			}()
+			callbackDone = true
+		}
+
 		// make a copy since k, v are only valid for the life of the transaction.
 		// See: https://godoc.org/github.com/boltdb/bolt#Cursor.Seek
-		batch.rangeValue = make([]byte, len(k)-len(rowPrefix))
-		copy(batch.rangeValue, k[len(rowPrefix):])
+		rangeValue := make([]byte, len(k)-len(rowPrefix))
+		copy(rangeValue, k[len(rowPrefix):])
 
-		batch.value = make([]byte, len(v))
-		copy(batch.value, v)
+		value := make([]byte, len(v))
+		copy(value, v)
 
-		if !callback(query, &batch) {
-			break
+		err := batch.send(resp{
+			rangeValue: rangeValue,
+			value:      value,
+		})
+
+		if err != nil {
+			return err
 		}
 	}
 
@@ -334,36 +356,98 @@ func (b *BoltWriteBatch) Add(tableName, hashValue string, rangeValue []byte, val
 	writes.puts[key] = value
 }
 
-type boltReadBatch struct {
+type resp struct {
 	rangeValue []byte
 	value      []byte
+}
+
+type readBatch struct {
+	respChan chan resp
+	curr     resp
+}
+
+func newReadBatch() *readBatch {
+	return &readBatch{respChan: make(chan resp)}
+}
+
+func (r *readBatch) Iterator() chunk.ReadBatchIterator {
+	return r
+}
+
+func (r *readBatch) Next() bool {
+	var ok bool
+	r.curr, ok = <-r.respChan
+	return ok
+}
+
+func (r *readBatch) RangeValue() []byte {
+	return r.curr.rangeValue
+}
+
+func (r *readBatch) Value() []byte {
+	return r.curr.value
+}
+
+func (r *readBatch) done() {
+	close(r.respChan)
+}
+
+func (r *readBatch) send(resp resp) error {
+	select {
+	case r.respChan <- resp:
+		return nil
+	case <-time.After(10 * time.Second):
+		return errors.New("timed out sending response")
+	}
+}
+
+type boltReadBatch struct {
+	rangeValues [][]byte
+	values      [][]byte
+}
+
+func newBoltReadBatch() *boltReadBatch {
+	return &boltReadBatch{
+		rangeValues: make([][]byte, 0, responseBatchSize),
+		values:      make([][]byte, 0, responseBatchSize),
+	}
+}
+
+func (b *boltReadBatch) add(rangeValue, value []byte) {
+	b.rangeValues = append(b.rangeValues, rangeValue)
+	b.values = append(b.values, value)
+}
+
+func (b *boltReadBatch) len() int {
+	return len(b.rangeValues)
 }
 
 func (b boltReadBatch) Iterator() chunk.ReadBatchIterator {
 	return &boltReadBatchIterator{
 		boltReadBatch: b,
+		i:             -1,
 	}
 }
 
 type boltReadBatchIterator struct {
-	consumed bool
+	i int
 	boltReadBatch
 }
 
 func (b *boltReadBatchIterator) Next() bool {
-	if b.consumed {
+	b.i++
+	if b.i >= len(b.boltReadBatch.rangeValues) {
 		return false
 	}
-	b.consumed = true
 	return true
 }
 
 func (b *boltReadBatchIterator) RangeValue() []byte {
-	return b.rangeValue
+	return b.rangeValues[b.i]
 }
 
 func (b *boltReadBatchIterator) Value() []byte {
-	return b.value
+	return b.values[b.i]
 }
 
 // Open the database.

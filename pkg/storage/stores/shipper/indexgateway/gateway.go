@@ -1,8 +1,9 @@
 package indexgateway
 
 import (
-	"github.com/grafana/dskit/services"
+	"sync"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/loki/pkg/storage/chunk"
 	"github.com/grafana/loki/pkg/storage/stores/shipper"
 	"github.com/grafana/loki/pkg/storage/stores/shipper/indexgateway/indexgatewaypb"
@@ -28,9 +29,8 @@ func NewIndexGateway(shipperIndexClient *shipper.Shipper) *gateway {
 	return g
 }
 
-func (g gateway) QueryIndex(request *indexgatewaypb.QueryIndexRequest, server indexgatewaypb.IndexGateway_QueryIndexServer) error {
+func (g *gateway) QueryIndex(request *indexgatewaypb.QueryIndexRequest, server indexgatewaypb.IndexGateway_QueryIndexServer) error {
 	var outerErr error
-	var innerErr error
 
 	queries := make([]chunk.IndexQuery, 0, len(request.Queries))
 	for _, query := range request.Queries {
@@ -42,20 +42,39 @@ func (g gateway) QueryIndex(request *indexgatewaypb.QueryIndexRequest, server in
 			ValueEqual:       query.ValueEqual,
 		})
 	}
+
+	batches := map[string][]*indexgatewaypb.Row{}
+	batchesMtx := sync.Mutex{}
+
 	outerErr = g.shipper.QueryPages(server.Context(), queries, func(query chunk.IndexQuery, batch chunk.ReadBatch) bool {
-		innerErr = g.sendBatch(server, query, batch)
-		if innerErr != nil {
-			return false
+		itr := batch.Iterator()
+		batchesMtx.Lock()
+		defer batchesMtx.Unlock()
+		for itr.Next() {
+			batches[util.QueryKey(query)] = append(batches[util.QueryKey(query)], &indexgatewaypb.Row{
+				RangeValue: itr.RangeValue(),
+				Value:      itr.Value(),
+			})
 		}
 
 		return true
 	})
 
-	if innerErr != nil {
-		return innerErr
+	if outerErr != nil {
+		return outerErr
 	}
 
-	return outerErr
+	for queryKey, batch := range batches {
+		err := server.Send(&indexgatewaypb.QueryIndexResponse{
+			QueryKey: queryKey,
+			Rows:     batch,
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (g *gateway) sendBatch(server indexgatewaypb.IndexGateway_QueryIndexServer, query chunk.IndexQuery, batch chunk.ReadBatch) error {
