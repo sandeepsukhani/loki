@@ -26,7 +26,7 @@ import (
 )
 
 type IndexSet interface {
-	Init() error
+	Init(forQuerying bool) error
 	Close()
 	MultiQueries(ctx context.Context, queries []index.Query, callback index.QueryPagesCallback) error
 	DropAllDBs() error
@@ -87,11 +87,16 @@ func NewIndexSet(tableName, userID, cacheLocation string, baseIndexSet storage.I
 }
 
 // Init downloads all the db files for the table from object storage.
-func (t *indexSet) Init() (err error) {
+func (t *indexSet) Init(forQuerying bool) (err error) {
 	// Using background context to avoid cancellation of download when request times out.
 	// We would anyways need the files for serving next requests.
 	ctx, cancelFunc := context.WithTimeout(context.Background(), downloadTimeout)
 	t.cancelFunc = cancelFunc
+
+	if forQuerying {
+		// do not rebuild expired cache at query time
+		ctx = storage.NoCacheRebuild(ctx)
+	}
 
 	logger := spanlogger.FromContextWithFallback(ctx, t.logger)
 

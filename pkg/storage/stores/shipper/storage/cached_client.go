@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	cacheTimeout = 1 * time.Minute
+	cacheTimeout         = 1 * time.Minute
+	noCacheRebuildCtxKey = "no-cache-rebuild"
 )
 
 type table struct {
@@ -75,7 +76,9 @@ func (c *cachedObjectClient) List(ctx context.Context, prefix, _ string) ([]clie
 		return nil, nil, fmt.Errorf("invalid prefix %s", prefix)
 	}
 
-	if time.Since(c.cacheBuiltAt) >= cacheTimeout {
+	noCacheRebuild, _ := ctx.Value(noCacheRebuildCtxKey).(bool)
+
+	if c.cacheBuiltAt.IsZero() || (!noCacheRebuild && time.Since(c.cacheBuiltAt) >= cacheTimeout) {
 		c.buildCacheOnce(ctx)
 	}
 
@@ -174,4 +177,8 @@ func (c *cachedObjectClient) buildCache(ctx context.Context) error {
 
 	c.cacheBuiltAt = time.Now()
 	return nil
+}
+
+func NoCacheRebuild(ctx context.Context) context.Context {
+	return context.WithValue(ctx, noCacheRebuildCtxKey, true)
 }
