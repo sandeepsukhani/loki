@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -350,6 +351,9 @@ func (t *indexSet) checkStorageForUpdates(ctx context.Context, lock, bypassListC
 	}
 
 	for _, file := range files {
+		if strings.Contains(file.Name, "tsdb") {
+			continue
+		}
 		listedDBs[file.Name] = struct{}{}
 
 		// Checking whether file was already downloaded, if not, download it.

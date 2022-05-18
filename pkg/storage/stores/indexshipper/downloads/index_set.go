@@ -306,6 +306,9 @@ func (t *indexSet) checkStorageForUpdates(ctx context.Context, lock bool) (toDow
 	}
 
 	for _, file := range files {
+		if !strings.Contains(file.Name, "tsdb") {
+			continue
+		}
 		normalized := strings.TrimSuffix(file.Name, gzipExtension)
 		listedDBs[normalized] = struct{}{}
 
