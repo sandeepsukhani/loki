@@ -101,3 +101,47 @@ func (c ChunkMetas) Finalize() ChunkMetas {
 	return res
 
 }
+
+// Add adds ChunkMeta at the right place in order. It assumes existing ChunkMetas have already been sorted by using Finalize
+func (c ChunkMetas) Add(chk ChunkMeta) ChunkMetas {
+	j := sort.Search(len(c), func(i int) bool {
+		ichk := c[i]
+		if ichk.MinTime != chk.MinTime {
+			return ichk.MinTime > chk.MinTime
+		}
+
+		if ichk.MaxTime != chk.MaxTime {
+			return ichk.MaxTime > chk.MaxTime
+		}
+
+		return ichk.Checksum > chk.Checksum
+	})
+
+	res := append(c, chk)
+	copy(res[j+1:], res[j:])
+	res[j] = chk
+
+	return res
+}
+
+// Drop drops ChunkMeta. It assumes existing ChunkMetas have already been sorted by using Finalize
+func (c ChunkMetas) Drop(chk ChunkMeta) ChunkMetas {
+	j := sort.Search(len(c), func(i int) bool {
+		ichk := c[i]
+		if ichk.MinTime != chk.MinTime {
+			return ichk.MinTime >= chk.MinTime
+		}
+
+		if ichk.MaxTime != chk.MaxTime {
+			return ichk.MaxTime >= chk.MaxTime
+		}
+
+		return ichk.Checksum >= chk.Checksum
+	})
+
+	if j >= len(c) || c[j] != chk {
+		return c
+	}
+
+	return c[:j+copy(c[j:], c[j+1:])]
+}
