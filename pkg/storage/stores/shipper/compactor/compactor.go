@@ -681,12 +681,7 @@ func (c *Compactor) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 func schemaPeriodForTable(cfg config.SchemaConfig, tableName string) (config.PeriodConfig, bool) {
 	// first round removes configs that does not have the prefix.
-	candidates := []config.PeriodConfig{}
-	for _, schema := range cfg.Configs {
-		if strings.HasPrefix(tableName, schema.IndexTables.Prefix) {
-			candidates = append(candidates, schema)
-		}
-	}
+	candidates := cfg.Configs
 	// WARN we  assume period is always daily. This is only true for boltdb-shipper.
 	var (
 		matched config.PeriodConfig
