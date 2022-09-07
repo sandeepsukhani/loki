@@ -301,16 +301,27 @@ func (c compositeStore) forStores(ctx context.Context, from, through model.Time,
 	}
 
 	start := from
-	for ; i < j; i++ {
+	for i < j {
+		// nextSchemaStarts* points to the next schema with a different date than the one at i
+		// stores with the same start date are replicated.
 		nextSchemaStarts := model.Latest
-		if i+1 < len(c.stores) {
-			nextSchemaStarts = c.stores[i+1].start
+		nextSchemaStartsIdx := i + 1
+		// skip all the stores as next schema with the same start date as i
+		for i := i; i < j && i+1 < len(c.stores) && c.stores[i].start == c.stores[i+1].start; i++ {
+			nextSchemaStartsIdx++
+		}
+		if nextSchemaStartsIdx < len(c.stores) {
+			nextSchemaStarts = c.stores[nextSchemaStartsIdx].start
 		}
 
 		end := min(through, nextSchemaStarts-1)
-		err := callback(ctx, start, end, c.stores[i])
-		if err != nil {
-			return err
+
+		// do the callback for all the stores before the next schema starts
+		for ; i < nextSchemaStartsIdx; i++ {
+			err := callback(ctx, start, end, c.stores[i])
+			if err != nil {
+				return err
+			}
 		}
 
 		start = nextSchemaStarts

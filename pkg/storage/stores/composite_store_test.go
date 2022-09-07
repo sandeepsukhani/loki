@@ -136,6 +136,23 @@ func TestCompositeStore(t *testing.T) {
 			},
 		},
 
+		{
+			compositeStore{
+				metrics: newMetrics(nil),
+				stores: []compositeStoreEntry{
+					{model.TimeFromUnix(0), mockStore(1)},
+					{model.TimeFromUnix(100), mockStore(2)},
+					{model.TimeFromUnix(100), mockStore(3)},
+				},
+			},
+			34, 165,
+			[]result{
+				{model.TimeFromUnix(34), model.TimeFromUnix(100) - 1, mockStore(1)},
+				{model.TimeFromUnix(100), model.TimeFromUnix(165), mockStore(2)},
+				{model.TimeFromUnix(100), model.TimeFromUnix(165), mockStore(3)},
+			},
+		},
+
 		// Test all the various combination we can get when there are three schemas
 		{
 			cs, 34, 65,
