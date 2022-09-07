@@ -16,6 +16,13 @@ import (
 	"github.com/grafana/loki/pkg/util"
 )
 
+type storeOp int
+
+const (
+	storeOpRead storeOp = iota
+	storeOpWrite
+)
+
 // Store for chunks.
 type Store interface {
 	Put(ctx context.Context, chunks []chunk.Chunk) error
@@ -73,7 +80,7 @@ func (c *CompositeStore) Stores() []Store {
 
 func (c compositeStore) Put(ctx context.Context, chunks []chunk.Chunk) error {
 	for _, chunk := range chunks {
-		err := c.forStores(ctx, chunk.From, chunk.Through, func(innerCtx context.Context, from, through model.Time, store Store) error {
+		err := c.forStores(ctx, chunk.From, chunk.Through, storeOpWrite, func(innerCtx context.Context, from, through model.Time, store Store) error {
 			return store.PutOne(innerCtx, from, through, chunk)
 		})
 		if err != nil {
@@ -84,7 +91,7 @@ func (c compositeStore) Put(ctx context.Context, chunks []chunk.Chunk) error {
 }
 
 func (c compositeStore) PutOne(ctx context.Context, from, through model.Time, chunk chunk.Chunk) error {
-	return c.forStores(ctx, from, through, func(innerCtx context.Context, from, through model.Time, store Store) error {
+	return c.forStores(ctx, from, through, storeOpWrite, func(innerCtx context.Context, from, through model.Time, store Store) error {
 		return store.PutOne(innerCtx, from, through, chunk)
 	})
 }
@@ -111,7 +118,7 @@ func (c compositeStore) GetSeries(ctx context.Context, userID string, from, thro
 func (c compositeStore) getSeries(ctx context.Context, userID string, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
 	var results []labels.Labels
 	found := map[uint64]struct{}{}
-	err := c.forStores(ctx, from, through, func(innerCtx context.Context, from, through model.Time, store Store) error {
+	err := c.forStores(ctx, from, through, storeOpRead, func(innerCtx context.Context, from, through model.Time, store Store) error {
 		series, err := store.GetSeries(innerCtx, userID, from, through, matchers...)
 		if err != nil {
 			return err
@@ -146,7 +153,7 @@ func (c compositeStore) LabelValuesForMetricName(ctx context.Context, userID str
 
 func (c compositeStore) labelValuesForMetricName(ctx context.Context, userID string, from, through model.Time, metricName string, labelName string, matchers ...*labels.Matcher) ([]string, error) {
 	var result util.UniqueStrings
-	err := c.forStores(ctx, from, through, func(innerCtx context.Context, from, through model.Time, store Store) error {
+	err := c.forStores(ctx, from, through, storeOpRead, func(innerCtx context.Context, from, through model.Time, store Store) error {
 		labelValues, err := store.LabelValuesForMetricName(innerCtx, userID, from, through, metricName, labelName, matchers...)
 		if err != nil {
 			return err
@@ -173,7 +180,7 @@ func (c compositeStore) LabelNamesForMetricName(ctx context.Context, userID stri
 
 func (c compositeStore) labelNamesForMetricName(ctx context.Context, userID string, from, through model.Time, metricName string) ([]string, error) {
 	var result util.UniqueStrings
-	err := c.forStores(ctx, from, through, func(innerCtx context.Context, from, through model.Time, store Store) error {
+	err := c.forStores(ctx, from, through, storeOpRead, func(innerCtx context.Context, from, through model.Time, store Store) error {
 		labelNames, err := store.LabelNamesForMetricName(innerCtx, userID, from, through, metricName)
 		if err != nil {
 			return err
@@ -202,7 +209,7 @@ func (c compositeStore) GetChunkRefs(ctx context.Context, userID string, from, t
 func (c compositeStore) getChunkRefs(ctx context.Context, userID string, from, through model.Time, matchers ...*labels.Matcher) ([][]chunk.Chunk, []*fetcher.Fetcher, error) {
 	chunkIDs := [][]chunk.Chunk{}
 	fetchers := []*fetcher.Fetcher{}
-	err := c.forStores(ctx, from, through, func(innerCtx context.Context, from, through model.Time, store Store) error {
+	err := c.forStores(ctx, from, through, storeOpRead, func(innerCtx context.Context, from, through model.Time, store Store) error {
 		ids, fetcher, err := store.GetChunkRefs(innerCtx, userID, from, through, matchers...)
 		if err != nil {
 			return err
@@ -235,7 +242,7 @@ func (c compositeStore) Stats(ctx context.Context, userID string, from, through 
 
 func (c compositeStore) stats(ctx context.Context, userID string, from, through model.Time, matchers ...*labels.Matcher) (*stats.Stats, error) {
 	xs := make([]*stats.Stats, 0, len(c.stores))
-	err := c.forStores(ctx, from, through, func(innerCtx context.Context, from, through model.Time, store Store) error {
+	err := c.forStores(ctx, from, through, storeOpRead, func(innerCtx context.Context, from, through model.Time, store Store) error {
 		x, err := store.Stats(innerCtx, userID, from, through, matchers...)
 		xs = append(xs, x)
 		return err
@@ -271,7 +278,7 @@ func (c compositeStore) Stop() {
 	}
 }
 
-func (c compositeStore) forStores(ctx context.Context, from, through model.Time, callback func(innerCtx context.Context, from, through model.Time, store Store) error) error {
+func (c compositeStore) forStores(ctx context.Context, from, through model.Time, operation storeOp, callback func(innerCtx context.Context, from, through model.Time, store Store) error) error {
 	if len(c.stores) == 0 {
 		return nil
 	}
@@ -306,7 +313,7 @@ func (c compositeStore) forStores(ctx context.Context, from, through model.Time,
 		// stores with the same start date are replicated.
 		nextSchemaStarts := model.Latest
 		nextSchemaStartsIdx := i + 1
-		// skip all the stores as next schema with the same start date as i
+		// skip all the stores with the same start date as i
 		for i := i; i < j && i+1 < len(c.stores) && c.stores[i].start == c.stores[i+1].start; i++ {
 			nextSchemaStartsIdx++
 		}
@@ -316,11 +323,17 @@ func (c compositeStore) forStores(ctx context.Context, from, through model.Time,
 
 		end := min(through, nextSchemaStarts-1)
 
-		// do the callback for all the stores before the next schema starts
+		// do the write operation for all the stores before the next schema starts
+		// do the read operation only on the first store
 		for ; i < nextSchemaStartsIdx; i++ {
 			err := callback(ctx, start, end, c.stores[i])
 			if err != nil {
 				return err
+			}
+
+			if operation == storeOpRead {
+				i = nextSchemaStartsIdx
+				break
 			}
 		}
 

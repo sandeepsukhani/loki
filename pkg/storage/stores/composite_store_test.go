@@ -195,7 +195,7 @@ func TestCompositeStore(t *testing.T) {
 	} {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			have := []result{}
-			err := tc.cs.forStores(context.Background(), model.TimeFromUnix(tc.from), model.TimeFromUnix(tc.through), collect(&have))
+			err := tc.cs.forStores(context.Background(), model.TimeFromUnix(tc.from), model.TimeFromUnix(tc.through), storeOpWrite, collect(&have))
 			require.NoError(t, err)
 			if !reflect.DeepEqual(tc.want, have) {
 				t.Fatalf("wrong stores - %s", test.Diff(tc.want, have))
