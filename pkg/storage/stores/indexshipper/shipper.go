@@ -175,7 +175,7 @@ func (s *indexShipper) ForEach(ctx context.Context, tableName, userID string, ca
 	}
 
 	if s.uploadsManager != nil {
-		if err := s.uploadsManager.ForEach(tableName, userID, callback); err != nil {
+		if err := s.uploadsManager.ForEach(ctx, tableName, userID, callback); err != nil {
 			return err
 		}
 	}

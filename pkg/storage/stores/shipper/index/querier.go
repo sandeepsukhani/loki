@@ -44,6 +44,8 @@ func (q *querier) QueryPages(ctx context.Context, queries []index.Query, callbac
 	queriesByTable := util.QueriesByTable(queries)
 	for table, queries := range queriesByTable {
 		err := util.DoParallelQueries(ctx, func(ctx context.Context, queries []index.Query, callback index.QueryPagesCallback) error {
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
 			// writer could be nil when running in ReadOnly mode
 			if q.writer != nil {
 				err := q.writer.ForEach(ctx, table, func(boltdb *bbolt.DB) error {
