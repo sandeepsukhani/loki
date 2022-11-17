@@ -1,9 +1,11 @@
 package deletion
 
 import (
+	"fmt"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"strings"
 
 	"github.com/grafana/loki/pkg/logql/syntax"
 	"github.com/grafana/loki/pkg/storage/stores/indexshipper/compactor/retention"
@@ -26,6 +28,7 @@ type DeleteRequest struct {
 
 	Metrics      *deleteRequestsManagerMetrics `json:"-"`
 	DeletedLines int32                         `json:"-"`
+	LinesChecked int32                         `json:"-"`
 }
 
 func (d *DeleteRequest) SetQuery(logQL string) error {
@@ -53,13 +56,26 @@ func (d *DeleteRequest) FilterFunction(labels labels.Labels) (filter.Func, error
 	}
 
 	if !allMatch(d.matchers, labels) {
+		if labels.Get("facility") == "archilogen" {
+			level.Warn(util_log.Logger).Log("msg", "labels do not match, returning no-op filter func")
+		}
 		return func(s string) bool {
 			return false
 		}, nil
 	}
 
+	if labels.Get("facility") == "archilogen" {
+		level.Info(util_log.Logger).Log("msg", "building and returning filter func for line matching")
+	}
+
 	f := p.ForStream(labels).ProcessString
-	return func(s string) bool {
+	return func(s string) (lineMatches bool) {
+		d.LinesChecked++
+		defer func() {
+			if strings.Contains(s, "archilogen-warn") && !lineMatches {
+				level.Warn(util_log.Logger).Log("msg", "line contains archilogen-warn however lineMatches is false", "line", s)
+			}
+		}()
 		result, _, skip := f(0, s)
 		if len(result) != 0 || skip {
 			d.Metrics.deletedLinesTotal.WithLabelValues(d.UserID).Inc()
@@ -81,10 +97,16 @@ func allMatch(matchers []*labels.Matcher, labels labels.Labels) bool {
 
 // IsDeleted checks if the given ChunkEntry will be deleted by this DeleteRequest.
 // It also returns the intervals of the ChunkEntry that will remain before filtering.
-func (d *DeleteRequest) IsDeleted(entry retention.ChunkEntry) (bool, []retention.IntervalFilter) {
+func (d *DeleteRequest) IsDeleted(entry retention.ChunkEntry) (isDeleted bool, filters []retention.IntervalFilter) {
 	if d.UserID != unsafeGetString(entry.UserID) {
 		return false, nil
 	}
+
+	defer func() {
+		if entry.Labels.Get("facility") == "archilogen" {
+			level.Info(util_log.Logger).Log("msg", "IsDeleted call resp", "entry", fmt.Sprint(entry), "isDeleted", isDeleted, "filters_len", len(filters))
+		}
+	}()
 
 	if !intervalsOverlap(model.Interval{
 		Start: entry.From,
@@ -116,6 +138,7 @@ func (d *DeleteRequest) IsDeleted(entry retention.ChunkEntry) (bool, []retention
 	if d.StartTime <= entry.From && d.EndTime >= entry.Through {
 		// if the logSelectorExpr has a filter part return the chunk boundaries as intervals
 		if d.logSelectorExpr.HasFilter() {
+			level.Info(util_log.Logger).Log("msg", "whole chunk covered by delete request")
 			return true, []retention.IntervalFilter{
 				{
 					Interval: model.Interval{
@@ -126,6 +149,9 @@ func (d *DeleteRequest) IsDeleted(entry retention.ChunkEntry) (bool, []retention
 				},
 			}
 		}
+		if entry.Labels.Get("facility") == "archilogen" {
+			level.Warn(util_log.Logger).Log("msg", "we should not be printing this")
+		}
 
 		// No filter in the logSelectorExpr so the whole chunk will be deleted
 		return true, nil
@@ -134,6 +160,9 @@ func (d *DeleteRequest) IsDeleted(entry retention.ChunkEntry) (bool, []retention
 	intervals := make([]retention.IntervalFilter, 0, 2)
 
 	if d.StartTime > entry.From {
+		if entry.Labels.Get("facility") == "archilogen" {
+			level.Warn(util_log.Logger).Log("msg", "deleting does not cover beginning of the chunk", "chunk_start", entry.From, "deletion_start", d.StartTime)
+		}
 		intervals = append(intervals, retention.IntervalFilter{
 			Interval: model.Interval{
 				Start: entry.From,
@@ -144,6 +173,9 @@ func (d *DeleteRequest) IsDeleted(entry retention.ChunkEntry) (bool, []retention
 	}
 
 	if d.EndTime < entry.Through {
+		if entry.Labels.Get("facility") == "archilogen" {
+			level.Warn(util_log.Logger).Log("msg", "deleting does not cover end of the chunk", "chunk_end", entry.Through, "deletion_end", d.EndTime)
+		}
 		intervals = append(intervals, retention.IntervalFilter{
 			Interval: model.Interval{
 				Start: d.EndTime + 1,
