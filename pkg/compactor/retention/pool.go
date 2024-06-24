@@ -14,6 +14,12 @@ var (
 			}
 		},
 	}
+
+	chunkEncodeBufferPool = sync.Pool{
+		New: func() interface{} {
+			return &bytes.Buffer{}
+		},
+	}
 )
 
 type keyPair struct {

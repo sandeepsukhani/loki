@@ -406,8 +406,13 @@ func (c *chunkRewriter) rewriteChunk(ctx context.Context, ce ChunkEntry, tableIn
 		newChunkEnd,
 	)
 
-	chunkBytesSize := facade.LokiChunk().(*chunkenc.MemChunk).BytesSize() + 4*1024 // size + 4kB should be enough room for cortex header
-	if err := newChunk.EncodeTo(bytes.NewBuffer(make([]byte, 0, chunkBytesSize))); err != nil {
+	encBuf := chunkEncodeBufferPool.Get().(*bytes.Buffer)
+	defer func() {
+		encBuf.Reset()
+		chunkEncodeBufferPool.Put(encBuf)
+	}()
+
+	if err := newChunk.EncodeTo(encBuf); err != nil {
 		return false, false, fmt.Errorf("chunk encoding: %w", err)
 	}
 
