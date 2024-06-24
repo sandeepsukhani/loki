@@ -411,6 +411,9 @@ func (c *chunkRewriter) rewriteChunk(ctx context.Context, ce ChunkEntry, tableIn
 		newChunkStart,
 		newChunkEnd,
 	)
+	defer func() {
+		newChunk = chunk.Chunk{}
+	}()
 
 	encBuf := chunkEncodeBufferPool.Get().(*bytes.Buffer)
 	defer func() {
