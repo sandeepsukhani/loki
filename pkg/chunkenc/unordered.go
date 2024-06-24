@@ -372,7 +372,11 @@ func (hb *unorderedHeadBlock) Serialise(pool WriterPool) ([]byte, error) {
 		serializeBytesBufferPool.Put(symbolsSectionBuf)
 	}()
 
-	outBuf := &bytes.Buffer{}
+	outBuf := serializeBytesBufferPool.Get().(*bytes.Buffer)
+	defer func() {
+		outBuf.Reset()
+		serializeBytesBufferPool.Put(outBuf)
+	}()
 
 	encBuf := make([]byte, binary.MaxVarintLen64)
 	compressedWriter := pool.GetWriter(outBuf)
@@ -428,7 +432,9 @@ func (hb *unorderedHeadBlock) Serialise(pool WriterPool) ([]byte, error) {
 		return nil, errors.Wrap(err, "flushing pending compress buffer")
 	}
 
-	return outBuf.Bytes(), nil
+	resp := make([]byte, outBuf.Len())
+	copy(resp, outBuf.Bytes())
+	return resp, nil
 }
 
 func (hb *unorderedHeadBlock) Convert(version HeadBlockFmt, symbolizer *symbolizer) (HeadBlock, error) {
