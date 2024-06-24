@@ -28,7 +28,7 @@ type HeadBlock interface {
 	CheckpointBytes(b []byte) ([]byte, error)
 	CheckpointSize() int
 	LoadBytes(b []byte) error
-	Serialise(pool WriterPool) ([]byte, error)
+	Serialise(pool WriterPool, outBuf *bytes.Buffer) error
 	Reset()
 	Bounds() (mint, maxt int64)
 	Entries() int
@@ -359,7 +359,7 @@ func (hb *unorderedHeadBlock) SampleIterator(
 
 // nolint:unused
 // serialise is used in creating an ordered, compressed block from an unorderedHeadBlock
-func (hb *unorderedHeadBlock) Serialise(pool WriterPool) ([]byte, error) {
+func (hb *unorderedHeadBlock) Serialise(pool WriterPool, outBuf *bytes.Buffer) error {
 	inBuf := serializeBytesBufferPool.Get().(*bytes.Buffer)
 	defer func() {
 		inBuf.Reset()
@@ -370,12 +370,6 @@ func (hb *unorderedHeadBlock) Serialise(pool WriterPool) ([]byte, error) {
 	defer func() {
 		symbolsSectionBuf.Reset()
 		serializeBytesBufferPool.Put(symbolsSectionBuf)
-	}()
-
-	outBuf := serializeBytesBufferPool.Get().(*bytes.Buffer)
-	defer func() {
-		outBuf.Reset()
-		serializeBytesBufferPool.Put(outBuf)
 	}()
 
 	encBuf := make([]byte, binary.MaxVarintLen64)
@@ -426,15 +420,13 @@ func (hb *unorderedHeadBlock) Serialise(pool WriterPool) ([]byte, error) {
 	)
 
 	if _, err := compressedWriter.Write(inBuf.Bytes()); err != nil {
-		return nil, errors.Wrap(err, "appending entry")
+		return errors.Wrap(err, "appending entry")
 	}
 	if err := compressedWriter.Close(); err != nil {
-		return nil, errors.Wrap(err, "flushing pending compress buffer")
+		return errors.Wrap(err, "flushing pending compress buffer")
 	}
 
-	resp := make([]byte, outBuf.Len())
-	copy(resp, outBuf.Bytes())
-	return resp, nil
+	return nil
 }
 
 func (hb *unorderedHeadBlock) Convert(version HeadBlockFmt, symbolizer *symbolizer) (HeadBlock, error) {
