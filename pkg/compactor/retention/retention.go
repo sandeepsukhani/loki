@@ -374,6 +374,9 @@ func (c *chunkRewriter) rewriteChunk(ctx context.Context, ce ChunkEntry, tableIn
 
 		return false
 	})
+	defer func() {
+		newChunkData = nil
+	}()
 	if err != nil {
 		if errors.Is(err, chunk.ErrSliceNoDataInRange) {
 			level.Info(util_log.Logger).Log("msg", "Delete request filterFunc leaves an empty chunk", "chunk ref", string(ce.ChunkRef.ChunkID))
@@ -388,6 +391,9 @@ func (c *chunkRewriter) rewriteChunk(ctx context.Context, ce ChunkEntry, tableIn
 	}
 
 	facade, ok := newChunkData.(*chunkenc.Facade)
+	defer func() {
+		facade = nil
+	}()
 	if !ok {
 		return false, false, errors.New("invalid chunk type")
 	}
