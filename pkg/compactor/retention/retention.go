@@ -375,6 +375,7 @@ func (c *chunkRewriter) rewriteChunk(ctx context.Context, ce ChunkEntry, tableIn
 		return false
 	})
 	defer func() {
+		newChunkData.(*chunkenc.MemChunk).Reset()
 		newChunkData = nil
 	}()
 	if err != nil {

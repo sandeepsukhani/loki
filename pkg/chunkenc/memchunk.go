@@ -518,6 +518,13 @@ func newByteChunk(b []byte, blockSize, targetSize int, fromCheckpoint bool) (*Me
 	return bc, nil
 }
 
+func (c *MemChunk) Reset() {
+	for i := range c.blocks {
+		c.blocks[i].b = nil
+	}
+	c.blocks = nil
+}
+
 // BytesWith uses a provided []byte for buffer instantiation
 // NOTE: This does not cut the head block nor include any head block data.
 func (c *MemChunk) BytesWith(b []byte) ([]byte, error) {
