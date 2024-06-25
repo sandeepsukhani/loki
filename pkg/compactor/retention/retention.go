@@ -376,7 +376,6 @@ func (c *chunkRewriter) rewriteChunk(ctx context.Context, ce ChunkEntry, tableIn
 	})
 	defer func() {
 		newChunkData.(*chunkenc.MemChunk).Reset()
-		newChunkData = nil
 	}()
 	if err != nil {
 		if errors.Is(err, chunk.ErrSliceNoDataInRange) {
@@ -404,9 +403,6 @@ func (c *chunkRewriter) rewriteChunk(ctx context.Context, ce ChunkEntry, tableIn
 		newChunkStart,
 		newChunkEnd,
 	)
-	defer func() {
-		newChunk = chunk.Chunk{}
-	}()
 
 	encBuf := chunkEncodeBufferPool.Get().(*bytes.Buffer)
 	defer func() {
@@ -425,11 +421,7 @@ func (c *chunkRewriter) rewriteChunk(ctx context.Context, ce ChunkEntry, tableIn
 
 	// upload chunk only if an entry was written
 	if uploadChunk {
-		temp := []chunk.Chunk{newChunk}
-		defer func() {
-			temp = nil
-		}()
-		err = c.chunkClient.PutChunks(ctx, temp)
+		err = c.chunkClient.PutChunks(ctx, []chunk.Chunk{newChunk})
 		if err != nil {
 			return false, false, err
 		}
