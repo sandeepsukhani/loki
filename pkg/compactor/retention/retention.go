@@ -366,7 +366,7 @@ func (c *chunkRewriter) rewriteChunk(ctx context.Context, ce ChunkEntry, tableIn
 		return false, false, fmt.Errorf("expected 1 entry for chunk %s but found %d in storage", chunkID, len(chks))
 	}
 
-	newChunkData, err := chks[0].Data.Rebound(ce.From, ce.Through, func(ts time.Time, s string, structuredMetadata ...labels.Label) bool {
+	newChunkData, err := chks[0].Data.(*chunkenc.Facade).LokiChunk().Rebound(ce.From.Time(), ce.Through.Time(), func(ts time.Time, s string, structuredMetadata ...labels.Label) bool {
 		if filterFunc(ts, s, structuredMetadata...) {
 			linesDeleted = true
 			return true
@@ -390,15 +390,7 @@ func (c *chunkRewriter) rewriteChunk(ctx context.Context, ce ChunkEntry, tableIn
 		return false, false, nil
 	}
 
-	facade, ok := newChunkData.(*chunkenc.Facade)
-	defer func() {
-		facade = nil
-	}()
-	if !ok {
-		return false, false, errors.New("invalid chunk type")
-	}
-
-	newChunkStart, newChunkEnd := util.RoundToMilliseconds(facade.Bounds())
+	newChunkStart, newChunkEnd := util.RoundToMilliseconds(newChunkData.Bounds())
 
 	// new chunk is out of range for this table so don't upload and index it
 	if newChunkStart > tableInterval.End || newChunkEnd < tableInterval.Start {
@@ -407,7 +399,7 @@ func (c *chunkRewriter) rewriteChunk(ctx context.Context, ce ChunkEntry, tableIn
 
 	newChunk := chunk.NewChunk(
 		userID, chks[0].FingerprintModel(), chks[0].Metric,
-		facade,
+		chunkenc.NewFacade(newChunkData, 0, 0),
 		newChunkStart,
 		newChunkEnd,
 	)
@@ -432,7 +424,11 @@ func (c *chunkRewriter) rewriteChunk(ctx context.Context, ce ChunkEntry, tableIn
 
 	// upload chunk only if an entry was written
 	if uploadChunk {
-		err = c.chunkClient.PutChunks(ctx, []chunk.Chunk{newChunk})
+		temp := []chunk.Chunk{newChunk}
+		defer func() {
+			temp = nil
+		}()
+		err = c.chunkClient.PutChunks(ctx, temp)
 		if err != nil {
 			return false, false, err
 		}
