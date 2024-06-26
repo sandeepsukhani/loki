@@ -518,11 +518,12 @@ func newByteChunk(b []byte, blockSize, targetSize int, fromCheckpoint bool) (*Me
 	return bc, nil
 }
 
-func (c *MemChunk) Reset() {
+func (c *MemChunk) Recycle() {
 	for i := range c.blocks {
-		c.blocks[i].b = nil
+		buf := bytes.NewBuffer(c.blocks[i].b)
+		buf.Reset()
+		serializeBytesBufferPool.Put(buf)
 	}
-	c.blocks = nil
 }
 
 // BytesWith uses a provided []byte for buffer instantiation
@@ -919,19 +920,13 @@ func (c *MemChunk) cut() error {
 	}
 
 	outBuf := serializeBytesBufferPool.Get().(*bytes.Buffer)
-	defer func() {
-		outBuf.Reset()
-		serializeBytesBufferPool.Put(outBuf)
-	}()
 
 	err := c.head.Serialise(GetWriterPool(c.encoding), outBuf)
 	if err != nil {
 		return err
 	}
 
-	b := make([]byte, outBuf.Len())
-	copy(b, outBuf.Bytes())
-
+	b := outBuf.Bytes()
 	mint, maxt := c.head.Bounds()
 	c.blocks = append(c.blocks, block{
 		b:                b,

@@ -375,7 +375,7 @@ func (c *chunkRewriter) rewriteChunk(ctx context.Context, ce ChunkEntry, tableIn
 		return false
 	})
 	defer func() {
-		newChunkData.(*chunkenc.MemChunk).Reset()
+		newChunkData.(*chunkenc.MemChunk).Recycle()
 	}()
 	if err != nil {
 		if errors.Is(err, chunk.ErrSliceNoDataInRange) {
