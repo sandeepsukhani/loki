@@ -461,6 +461,7 @@ func newByteChunk(b []byte, blockSize, targetSize int, fromCheckpoint bool) (*Me
 	num := db.uvarint()
 	bc.blocks = make([]block, 0, num)
 
+	nextOffset := 0
 	for i := 0; i < num; i++ {
 		var blk block
 		// Read #entries.
@@ -475,7 +476,12 @@ func newByteChunk(b []byte, blockSize, targetSize int, fromCheckpoint bool) (*Me
 		if version >= ChunkFormatV3 {
 			blk.uncompressedSize = db.uvarint()
 		}
+
+		if nextOffset != 0 {
+			blk.offset = nextOffset
+		}
 		l := db.uvarint()
+		nextOffset = blk.offset + l + 4 // current block offset + length + checksum
 		blk.b = b[blk.offset : blk.offset+l]
 
 		// Verify checksums.
