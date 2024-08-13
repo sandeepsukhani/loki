@@ -668,9 +668,15 @@ func (c *MemChunk) writeTo(w io.Writer, forCheckpoint bool) (int64, error) {
 		offset += int64(n)
 	}
 
+	firstBlockOffset := offset
+	expectedOffset := offset
+
 	// Write Blocks.
 	for i, b := range c.blocks {
 		c.blocks[i].offset = int(offset)
+		if int64(c.blocks[i].offset) != expectedOffset {
+			level.Error(util_log.Logger).Log("msg", "unexpected offset set to be written for a block", "block", i, "expected", expectedOffset, "actual", c.blocks[i].offset)
+		}
 
 		crc32Hash.Reset()
 		_, err := crc32Hash.Write(b.b)
@@ -683,6 +689,7 @@ func (c *MemChunk) writeTo(w io.Writer, forCheckpoint bool) (int64, error) {
 			return offset, errors.Wrap(err, "write block")
 		}
 		offset += int64(n)
+		expectedOffset += int64(len(b.b)) + 4
 	}
 
 	metasOffset := offset
@@ -690,16 +697,26 @@ func (c *MemChunk) writeTo(w io.Writer, forCheckpoint bool) (int64, error) {
 	eb.reset()
 	eb.putUvarint(len(c.blocks))
 
+	expectedOffset = firstBlockOffset
 	// Write BlockMetas.
-	for _, b := range c.blocks {
+	for i, b := range c.blocks {
 		eb.putUvarint(b.numEntries)
 		eb.putVarint64(b.mint)
 		eb.putVarint64(b.maxt)
+		if int64(b.offset) != expectedOffset {
+			level.Error(util_log.Logger).Log("msg", "unexpected offset being written for a block", "block", i, "expected", expectedOffset, "actual", c.blocks[i].offset)
+		}
+		currLen := len(eb.get())
 		eb.putUvarint(b.offset)
+		writtenOffset, _ := binary.Uvarint(eb.get()[currLen:])
+		if int64(writtenOffset) != expectedOffset {
+			level.Error(util_log.Logger).Log("msg", "unexpected offset written for a block", "block", i, "expected", expectedOffset, "actual", writtenOffset)
+		}
 		if c.format >= ChunkFormatV3 {
 			eb.putUvarint(b.uncompressedSize)
 		}
 		eb.putUvarint(len(b.b))
+		expectedOffset += int64(len(b.b)) + 4
 	}
 	metasLen := len(eb.get())
 	eb.putHash(crc32Hash)
