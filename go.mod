@@ -151,6 +151,7 @@ require (
 	gotest.tools v2.2.0+incompatible
 	k8s.io/apimachinery v0.32.1
 	k8s.io/utils v0.0.0-20241104163129-6fe5fd82f078
+	zombiezen.com/go/sqlite v1.4.0
 )
 
 require (
@@ -183,12 +184,14 @@ require (
 	github.com/mdlayher/vsock v1.2.1 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
+	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/ncw/swift v1.0.53 // indirect
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
 	github.com/pires/go-proxyproto v0.7.0 // indirect
 	github.com/pkg/xattr v0.4.10 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
+	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/tklauser/go-sysconf v0.3.13 // indirect
 	github.com/tklauser/numcpus v0.7.0 // indirect
@@ -200,6 +203,10 @@ require (
 	go.opentelemetry.io/otel/sdk v1.34.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.33.0 // indirect
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
+	modernc.org/libc v1.55.3 // indirect
+	modernc.org/mathutil v1.6.0 // indirect
+	modernc.org/memory v1.8.0 // indirect
+	modernc.org/sqlite v1.34.1 // indirect
 )
 
 require (

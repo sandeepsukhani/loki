@@ -26,6 +26,7 @@ type DeleteRequest struct {
 	Status    DeleteRequestStatus `json:"status"`
 	CreatedAt model.Time          `json:"created_at"`
 
+	Shards          []timeInterval         `json:"-"`
 	UserID          string                 `json:"-"`
 	SequenceNum     int64                  `json:"-"`
 	matchers        []*labels.Matcher      `json:"-"`
@@ -34,6 +35,11 @@ type DeleteRequest struct {
 
 	Metrics      *deleteRequestsManagerMetrics `json:"-"`
 	DeletedLines int32                         `json:"-"`
+}
+
+type shard struct {
+	requestID, userID  string
+	startTime, endTime model.Time
 }
 
 func (d *DeleteRequest) SetQuery(logQL string) error {
