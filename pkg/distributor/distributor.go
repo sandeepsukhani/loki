@@ -637,7 +637,7 @@ func (d *Distributor) PushWithResolver(ctx context.Context, req *logproto.PushRe
 				for _, lbl := range entry.StructuredMetadata {
 					normalized, err = labelNamer.Build(lbl.Name)
 					if err != nil {
-						return err
+						return errors.Wrapf(err, "invalid structured metadata name %s from tenant %s for stream %s", lbl.Name, tenantID, stream.Labels)
 					}
 					if normalized != lbl.Name {
 						// Swap the name with the normalized one.
