@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"github.com/c2h5oh/datasize"
+	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/jsonparser"
 	json "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
-
-	"github.com/grafana/dskit/httpgrpc"
+	"golang.org/x/time/rate"
 
 	"github.com/grafana/loki/v3/pkg/logproto"
 	"github.com/grafana/loki/v3/pkg/logql/syntax"
@@ -21,6 +22,7 @@ import (
 	"github.com/grafana/loki/v3/pkg/logqlmodel/stats"
 	"github.com/grafana/loki/v3/pkg/storage/stores/index/seriesvolume"
 	"github.com/grafana/loki/v3/pkg/util"
+	util_log "github.com/grafana/loki/v3/pkg/util/log"
 )
 
 var (
@@ -29,6 +31,7 @@ var (
 	errNegativeStep       = errors.New("negative query resolution step widths are not accepted. Try a positive integer")
 	errStepTooSmall       = errors.New("exceeded maximum resolution of 11,000 points per time series. Try increasing the value of the step parameter")
 	errNegativeInterval   = errors.New("interval must be >= 0")
+	rateLimiter           = rate.NewLimiter(rate.Every(time.Second), 5)
 )
 
 // QueryStatus holds the status of a query
@@ -109,7 +112,7 @@ func (s *LogProtoStream) UnmarshalJSON(data []byte) error {
 			if ty == jsonparser.Null {
 				return nil
 			}
-			entries, err := unmarshalHTTPToLogProtoEntries(val)
+			entries, err := unmarshalHTTPToLogProtoEntries(val, s.Labels)
 			if err != nil {
 				return err
 			}
@@ -120,7 +123,7 @@ func (s *LogProtoStream) UnmarshalJSON(data []byte) error {
 	return err
 }
 
-func unmarshalHTTPToLogProtoEntries(data []byte) ([]logproto.Entry, error) {
+func unmarshalHTTPToLogProtoEntries(data []byte, labels string) ([]logproto.Entry, error) {
 	var (
 		entries    []logproto.Entry
 		parseError error
@@ -132,7 +135,7 @@ func unmarshalHTTPToLogProtoEntries(data []byte) ([]logproto.Entry, error) {
 		if ty == jsonparser.Null {
 			return
 		}
-		e, err := unmarshalHTTPToLogProtoEntry(value)
+		e, err := unmarshalHTTPToLogProtoEntry(value, labels)
 		if err != nil {
 			parseError = err
 			return
@@ -149,11 +152,12 @@ func unmarshalHTTPToLogProtoEntries(data []byte) ([]logproto.Entry, error) {
 	return entries, nil
 }
 
-func unmarshalHTTPToLogProtoEntry(data []byte) (logproto.Entry, error) {
+func unmarshalHTTPToLogProtoEntry(data []byte, labels string) (logproto.Entry, error) {
 	var (
-		i          int
-		parseError error
-		e          logproto.Entry
+		i                       int
+		parseError              error
+		e                       logproto.Entry
+		doubleUnderscoreSMFound bool
 	)
 	_, err := jsonparser.ArrayEach(data, func(value []byte, t jsonparser.ValueType, _ int, _ error) {
 		// assert that both items in array are of type string
@@ -190,10 +194,15 @@ func unmarshalHTTPToLogProtoEntry(data []byte) (logproto.Entry, error) {
 				if err != nil {
 					return err
 				}
-				structuredMetadata = append(structuredMetadata, logproto.LabelAdapter{
+
+				kv := logproto.LabelAdapter{
 					Name:  string(key),
 					Value: parsedVal,
-				})
+				}
+				structuredMetadata = append(structuredMetadata, kv)
+				if kv.Name == `__` {
+					doubleUnderscoreSMFound = true
+				}
 				return nil
 			})
 			if err != nil {
@@ -206,6 +215,9 @@ func unmarshalHTTPToLogProtoEntry(data []byte) (logproto.Entry, error) {
 	})
 	if parseError != nil {
 		return e, parseError
+	}
+	if err == nil && doubleUnderscoreSMFound && labels != "" && rateLimiter.Allow() {
+		level.Error(util_log.Logger).Log("msg", "structured metadata with double underscore found", "ts", e.Timestamp, "labels", labels)
 	}
 	return e, err
 }
